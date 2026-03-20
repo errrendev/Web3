@@ -1,11 +1,15 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { dummyCampaigns } from "../lib/constants";
+
 import CampaignCard from "../components/CampaignCard";
+import { useCrowdfund } from "../context/CrowdfundContext";
+
+
 
 const CATEGORIES = ["All", "Technology", "Art & Creative", "Health & Medical", "Education", "Environment", "Community"];
 
 export default function Home() {
+    const { getCampaigns} = useCrowdfund();
     const navigate = useNavigate();
     const [campaigns, setCampaigns] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -13,11 +17,23 @@ export default function Home() {
     const [search, setSearch] = useState("");
 
     useEffect(() => {
-        setTimeout(() => {
-            setCampaigns(dummyCampaigns);
-            setLoading(false);
-        }, 900);
+        const fetchCampaigns = async () => {
+            setLoading(true);
+            try {
+                const data = await getCampaigns();
+                setCampaigns(data);
+            } catch (err) {
+                console.error(err);
+            } finally {
+                setLoading(false);
+            }
+        };
+    
+        fetchCampaigns();
     }, []);
+
+
+    
 
     const filtered = campaigns.filter((c) => {
         const matchTag = activeTag === "All" || c.category === activeTag;
@@ -126,10 +142,10 @@ export default function Home() {
                     <div className="flex flex-wrap gap-6">
                         {filtered.map((c) => (
                             <CampaignCard
-                                key={c.id}
-                                {...c}
-                                handleClick={() => navigate(`/campaign-details/${c.id}`, { state: c })}
-                            />
+        key={c.campaignAddress}   // ← changed from c.id
+        {...c}
+        handleClick={() => navigate(`/campaign-details/${c.campaignAddress}`, { state: c })}
+    />
                         ))}
                     </div>
                 )}
