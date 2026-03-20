@@ -41,7 +41,7 @@ const Field = ({ label, placeholder, type = "text", value, onChange, textarea = 
 
 export default function CreateCampaign() {
   const navigate = useNavigate();
-  const { createCampaign } = useCrowdfund();
+  const { createCampaign ,   testContract} = useCrowdfund();
 
   const [submitting, setSubmitting] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -115,7 +115,7 @@ export default function CreateCampaign() {
       alert("Please upload image to IPFS first.");
       return;
     }
-
+    console.log("hii")
     setSubmitting(true);
     try {
       await createCampaign({
@@ -240,6 +240,7 @@ export default function CreateCampaign() {
 
         <button
           type="submit"
+          onClick={handleSubmit}
           disabled={submitting || !cid}
           className="self-center w-full sm:w-auto px-12 py-3 rounded-xl bg-[#1dc071] text-white font-bold text-[15px] hover:bg-[#17a85e] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
         >

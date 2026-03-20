@@ -1,5 +1,7 @@
 import { createContext, useContext, useState } from "react";
 import { ethers } from 'ethers'
+import { getFactoryContract } from "./../contracts/getFactoryAdress";
+
 
 const CrowdfundContext = createContext();
 
@@ -7,7 +9,7 @@ const CrowdfundContext = createContext();
 
 const networks = {
     polygonAmoy: {
-        chainId: "0x13882", // 80002 in hex
+        chainId: "0x13882",
         chainName: "Polygon Amoy Testnet",
         nativeCurrency: {
             name: "MATIC",
@@ -17,6 +19,8 @@ const networks = {
         rpcUrls: ["https://rpc-amoy.polygon.technology"],
         blockExplorerUrls: ["https://amoy.polygonscan.com"],
     },
+    // Sepolia (chainId 11155111 -> 0xaa36a7)
+   
 };
 
 export const CrowdfundProvider = ({ children }) => {
@@ -50,9 +54,41 @@ export const CrowdfundProvider = ({ children }) => {
         }
     };
 
+
+    const testContract = async () => {
+        try {
+          const contract = await getFactoryContract();
+          console.log("Contract connected:", contract);
+          alert("Contract connected successfully");
+        } catch (error) {
+          console.error(error);
+          alert(error.message);
+        }
+      };
+
     // Placeholder: create campaign
-    const createCampaign = async (form) => {
-        console.log("Creating campaign:", form);
+    const createCampaign = async (formData) => {
+        try {
+            const contract = await getFactoryContract();
+        
+            const tx = await contract.createCampaign(
+              formData.campaignTitle,
+              ethers.parseEther(formData.requireCampaignAmount), 
+              formData.imgUrl,
+              formData.campaignCategory,
+              formData.campaignStory
+            );
+        
+            console.log("Transaction sent:", tx.hash);
+        
+            await tx.wait();
+        
+            console.log("Campaign created successfully");
+            return true;
+          } catch (error) {
+            console.error("Create campaign error:", error);
+            throw error;
+          }
     };
 
     // Placeholder: get campaigns
@@ -80,6 +116,7 @@ export const CrowdfundProvider = ({ children }) => {
                 getCampaigns,
                 donate,
                 getDonations,
+                testContract,
                 campaigns,
                 setCampaigns,
             }}
