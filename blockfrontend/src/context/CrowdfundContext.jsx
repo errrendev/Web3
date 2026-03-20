@@ -1,6 +1,5 @@
 import { createContext, useContext, useState } from "react";
-import { ethers } from "ethers";
-import { uploadFileToIPFS } from "../lib/ipfs";
+import { ethers } from 'ethers'
 
 const CrowdfundContext = createContext();
 
@@ -51,27 +50,9 @@ export const CrowdfundProvider = ({ children }) => {
         }
     };
 
-    // Create campaign (upload image to IPFS first)
+    // Placeholder: create campaign
     const createCampaign = async (form) => {
-        try {
-            let ipfsImageUrl = null;
-
-            if (form.imgUrl instanceof File) {
-                const { url } = await uploadFileToIPFS(form.imgUrl);
-                ipfsImageUrl = url;
-            }
-
-            const payload = {
-                ...form,
-                imgUrl: ipfsImageUrl,
-            };
-
-            // TODO: call your smart contract here with `payload`
-            console.log("Creating campaign with IPFS image:", payload);
-        } catch (error) {
-            console.error("Failed to create campaign:", error);
-            throw error;
-        }
+        console.log("Creating campaign:", form);
     };
 
     // Placeholder: get campaigns
