@@ -41,7 +41,7 @@ const Field = ({ label, placeholder, type = "text", value, onChange, textarea = 
 
 export default function CreateCampaign() {
   const navigate = useNavigate();
-  const { createCampaign ,   testContract} = useCrowdfund();
+  const { createCampaign } = useCrowdfund();
 
   const [submitting, setSubmitting] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);

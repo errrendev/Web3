@@ -19,10 +19,62 @@ const networks = {
   },
 };
 
+const CAMPAIGN_DURATION_DAYS = 30;
+const SEPOLIA_RPC_URL = "https://ethereum-sepolia-rpc.publicnode.com";
+const CAMPAIGN_ABI = ["function receivedAmount() view returns (uint256)"];
+const CAMPAIGN_DETAILS_ABI = [
+  "function getCampaignDetails() view returns (string,uint256,string,string,string,address,uint256)",
+];
+const CREATED_EVENT_NAMES = ["CampaignCreated", "campaignCreated"];
+
 export const CrowdfundProvider = ({ children }) => {
   const [address, setAddress] = useState(null);
   const [campaigns, setCampaigns] = useState([]);
   const [balance, setBalance] = useState("");
+
+  const factoryAddress = import.meta.env.VITE_CAMPAIGN_FACTORY_ADDRESS;
+  const ipfsToGatewayUrl = (value) => {
+    if (!value) return "";
+    if (value.startsWith("http")) return value;
+    return `https://${import.meta.env.VITE_PINATA_GATEWAY}/ipfs/${value}`;
+  };
+
+  const normalizeCampaign = (raw, amountCollectedWei = 0n) => {
+    const target = ethers.formatEther(raw.requiredAmount);
+    const amountCollected = ethers.formatEther(amountCollectedWei);
+
+    const createdAtSecondsRaw = Number(raw.timeStamp);
+    const createdAtSeconds =
+      Number.isFinite(createdAtSecondsRaw) && createdAtSecondsRaw > 0
+        ? createdAtSecondsRaw
+        : Math.floor(Date.now() / 1000);
+    const deadline = new Date(
+      (createdAtSeconds + CAMPAIGN_DURATION_DAYS * 24 * 60 * 60) * 1000
+    ).toISOString();
+
+    const normalizedCategory =
+      typeof raw.category === "string" ? raw.category : "Community";
+
+    return {
+      id: raw.campaignAddress,
+      owner: raw.owner,
+      title: raw.title,
+      description: raw.campaignStory,
+      target,
+      deadline,
+      amountCollected,
+      image: ipfsToGatewayUrl(raw.imgUrl),
+      category: normalizedCategory,
+      campaignAddress: raw.campaignAddress,
+      timeStamp: createdAtSeconds,
+      txHash: raw.txHash,
+
+      // Keep old keys too so existing components don't break.
+      requiredAmount: target,
+      story: raw.campaignStory,
+      imgUrl: ipfsToGatewayUrl(raw.imgUrl),
+    };
+  };
 
   const connectWallet = async () => {
     try {
@@ -47,9 +99,7 @@ export const CrowdfundProvider = ({ children }) => {
         }
       }
 
-      await window.ethereum.request({
-        method: "eth_requestAccounts",
-      });
+      await window.ethereum.request({ method: "eth_requestAccounts" });
 
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
@@ -64,26 +114,9 @@ export const CrowdfundProvider = ({ children }) => {
     }
   };
 
-  const testContract = async () => {
-    try {
-      const contract = await getFactoryContract();
-      console.log("Contract connected:", contract);
-      alert("Contract connected successfully");
-    } catch (error) {
-      console.error(error);
-      alert(error.message);
-    }
-  };
-
   const createCampaign = async (formData) => {
     try {
       const contract = await getFactoryContract();
-
-      console.log(
-        "Factory address from env:",
-        import.meta.env.VITE_CAMPAIGN_FACTORY_ADDRESS
-      );
-      console.log("Contract target:", contract.target);
 
       const tx = await contract.createCampaign(
         formData.campaignTitle,
@@ -93,49 +126,54 @@ export const CrowdfundProvider = ({ children }) => {
         formData.campaignStory
       );
 
-      console.log("Transaction sent:", tx.hash);
-      console.log("Transaction to:", tx.to);
-
       const receipt = await tx.wait();
 
-      console.log("Campaign created successfully");
-      console.log("Receipt:", receipt);
-
-      const log = receipt.logs.find((log) => {
+      const log = receipt.logs.find((oneLog) => {
         try {
-          const parsed = contract.interface.parseLog(log);
-          return parsed && parsed.name === "campaignCreated";
+          const parsed = contract.interface.parseLog(oneLog);
+          return parsed && CREATED_EVENT_NAMES.includes(parsed.name);
         } catch {
           return false;
         }
       });
 
       if (!log) {
-        console.log("No campaignCreated event found in receipt");
+        console.log("No campaign creation event found in receipt");
         return null;
       }
 
       const decoded = contract.interface.parseLog(log);
-      const a = decoded.args;
+      const args = decoded.args;
 
-      const campaign = {
-        title: a.title,
-        requiredAmount: ethers.formatEther(a.requiredAmount),
-        owner: a.owner,
-        campaignAddress: a.campaignAddress,
-        imgUrl: a.imgUrl?.startsWith("http")
-          ? a.imgUrl
-          : `https://${import.meta.env.VITE_PINATA_GATEWAY}/ipfs/${a.imgUrl}`,
-        category: a.category,
-        story: a.campaignStory,
-        timeStamp: a.timeStamp.toString(),
-        txHash: tx.hash,
-      };
+      let receivedAmount = 0n;
+      try {
+        const provider = new ethers.JsonRpcProvider(SEPOLIA_RPC_URL);
+        const campaignContract = new ethers.Contract(
+          args.campaignAddress,
+          CAMPAIGN_ABI,
+          provider
+        );
+        receivedAmount = await campaignContract.receivedAmount();
+      } catch (amountError) {
+        console.warn("Could not fetch received amount for new campaign", amountError);
+      }
+
+      const campaign = normalizeCampaign(
+        {
+          title: args.title,
+          requiredAmount: args.requiredAmount,
+          owner: args.owner,
+          campaignAddress: args.campaignAddress,
+          imgUrl: args.imgUrl,
+          category: formData.campaignCategory || args.category,
+          campaignStory: args.campaignStory,
+          timeStamp: Number(args.timeStamp),
+          txHash: tx.hash,
+        },
+        receivedAmount
+      );
 
       setCampaigns((prev) => [campaign, ...prev]);
-
-      console.log("Decoded campaign:", campaign);
-
       return campaign;
     } catch (error) {
       console.error("Create campaign error:", error);
@@ -145,60 +183,53 @@ export const CrowdfundProvider = ({ children }) => {
 
   const getCampaigns = async () => {
     try {
-      const provider = new ethers.JsonRpcProvider(
-        "https://ethereum-sepolia-rpc.publicnode.com"
+      if (!factoryAddress) {
+        console.error("VITE_CAMPAIGN_FACTORY_ADDRESS is missing");
+        return [];
+      }
+
+      const provider = new ethers.JsonRpcProvider(SEPOLIA_RPC_URL);
+      const contract = new ethers.Contract(factoryAddress, campaignFactoryAbi, provider);
+
+      const deployedCampaignAddresses = await contract.getDeployedCampaigns();
+      const latestFirstAddresses = [...deployedCampaignAddresses].reverse();
+
+      const campaignsFromChain = await Promise.all(
+        latestFirstAddresses.map(async (campaignAddress, index) => {
+          const campaignContract = new ethers.Contract(
+            campaignAddress,
+            CAMPAIGN_DETAILS_ABI,
+            provider
+          );
+
+          const details = await campaignContract.getCampaignDetails();
+          const title = details[0];
+          const requiredAmount = details[1];
+          const image = details[2];
+          const category = details[3];
+          const story = details[4];
+          const owner = details[5];
+          const receivedAmount = details[6];
+
+          return normalizeCampaign(
+            {
+              title,
+              requiredAmount,
+              owner,
+              campaignAddress,
+              imgUrl: image,
+              category,
+              campaignStory: story,
+              timeStamp: Math.floor(Date.now() / 1000) - index,
+              txHash: null,
+            },
+            receivedAmount
+          );
+        })
       );
 
-      const txHash = "0xc1beb738fbaaf94a2bbd096d465b9db3b359ff289a9612c5f375d8e4d722f33d";
-
-      const receipt = await provider.getTransactionReceipt(txHash);
-
-      if (!receipt) {
-        console.log("Transaction not found");
-        return [];
-      }
-
-      const iface = new ethers.Interface(campaignFactoryAbi);
-      const factoryAddress =
-        import.meta.env.VITE_CAMPAIGN_FACTORY_ADDRESS.toLowerCase();
-
-      const log = receipt.logs.find((log) => {
-        if (log.address.toLowerCase() !== factoryAddress) return false;
-
-        try {
-          const parsed = iface.parseLog(log);
-          return parsed && parsed.name === "campaignCreated";
-        } catch {
-          return false;
-        }
-      });
-
-      if (!log) {
-        console.log("No campaignCreated event found for this transaction");
-        return [];
-      }
-
-      const decoded = iface.parseLog(log);
-      const a = decoded.args;
-
-      const campaign = {
-        title: a.title,
-        requiredAmount: ethers.formatEther(a.requiredAmount),
-        owner: a.owner,
-        campaignAddress: a.campaignAddress,
-        imgUrl: a.imgUrl?.startsWith("http")
-          ? a.imgUrl
-          : `https://${import.meta.env.VITE_PINATA_GATEWAY}/ipfs/${a.imgUrl}`,
-        category: a.category,
-        story: a.campaignStory,
-        timeStamp: a.timeStamp.toString(),
-        txHash,
-      };
-
-      console.log("Campaign:", campaign);
-
-      setCampaigns([campaign]);
-      return [campaign];
+      setCampaigns(campaignsFromChain);
+      return campaignsFromChain;
     } catch (error) {
       console.error("Error fetching campaigns:", error);
       return [];
@@ -223,7 +254,6 @@ export const CrowdfundProvider = ({ children }) => {
         getCampaigns,
         donate,
         getDonations,
-        testContract,
         campaigns,
         setCampaigns,
       }}

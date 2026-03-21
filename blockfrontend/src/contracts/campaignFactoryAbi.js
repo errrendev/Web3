@@ -22,8 +22,22 @@ const campaignFactoryAbi = [
     stateMutability: "view",
   },
   {
+    type: "function",
+    name: "getDeployedCampaignCount",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "getDeployedCampaigns",
+    inputs: [],
+    outputs: [{ name: "", type: "address[]", internalType: "address[]" }],
+    stateMutability: "view",
+  },
+  {
     type: "event",
-    name: "campaignCreated",
+    name: "CampaignCreated",
     anonymous: false,
     inputs: [
       { name: "title", type: "string", internalType: "string", indexed: false },
@@ -39,4 +53,3 @@ const campaignFactoryAbi = [
 ];
 
 export default campaignFactoryAbi;
-
